@@ -481,7 +481,9 @@ class NoteStore {
   // Bulk swap of the whole notes array — used by import (merge or replace),
   // where callers have already normalized the records. One save instead of N.
   replaceAll(records) {
-    this.data = { version: STORE_VERSION, notes: records };
+    // Replace only the notes, preserving settings and workspaces so the
+    // workspace invariants (active workspace, membership) survive an import.
+    this.data = { ...this.data, notes: records };
     this.save();
   }
 }
