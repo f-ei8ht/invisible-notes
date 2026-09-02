@@ -1,11 +1,13 @@
 // Notes Manager: the only place a note record can be permanently deleted.
 // Owns its own BrowserWindow (singleton) and IPC surface; note lifecycle
-// actions (show/hide/delete/rename) are injected so this module never
-// touches the store directly — main.js stays the single source of truth.
+// actions (show/hide/delete/rename/import) are injected so this module never
+// mutates the store directly — main.js stays the single source of truth.
 const path = require('path');
+const fs = require('fs');
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { registerShortcuts } = require('./shortcuts');
 const { sanitizeWorkspaceName } = require('./store');
+const { STORE_VERSION, normalizeImport } = require('./store');
 
 const MAX_TITLE_LENGTH = 80;
 
@@ -166,6 +168,80 @@ function createManagerModule({ store, actions }) {
       detail: 'This cannot be undone. The note will be removed from this device.'
     });
     if (response === 1) actions.deleteNoteRecord(id);
+  });
+
+  function managerWindow() {
+    return win && !win.isDestroyed() ? win : undefined;
+  }
+
+  // Export writes a PLAINTEXT JSON copy on purpose: notes.json itself is
+  // encrypted with safeStorage, which is keyed to this OS user on this
+  // machine — an encrypted backup would be unreadable on the machine the
+  // user is migrating to. The file is unencrypted, so users should store
+  // it somewhere safe (noted in the README).
+  ipcMain.handle('manager:export', async () => {
+    const { canceled, filePath } = await dialog.showSaveDialog(managerWindow(), {
+      title: 'Export All Notes',
+      defaultPath: `ghost-notes-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'Ghost Notes Backup', extensions: ['json'] }]
+    });
+    if (canceled || !filePath) return { canceled: true };
+    const payload = {
+      app: 'ghost-notes',
+      version: STORE_VERSION,
+      exportedAt: new Date().toISOString(),
+      notes: store.all()
+    };
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    } catch (_) {
+      dialog.showErrorBox(
+        'Could not export notes',
+        'Ghost Notes could not write the backup file. Check that the chosen location is writable and try again.'
+      );
+      return { ok: false };
+    }
+    return { ok: true, count: payload.notes.length };
+  });
+
+  ipcMain.handle('manager:import', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(managerWindow(), {
+      title: 'Import Notes',
+      filters: [
+        { name: 'Ghost Notes Backup', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    });
+    if (canceled || !filePaths || filePaths.length === 0) return { canceled: true };
+
+    let records = null;
+    try {
+      records = normalizeImport(JSON.parse(fs.readFileSync(filePaths[0], 'utf8')));
+    } catch (_) {
+      records = null;
+    }
+    if (!records || records.length === 0) {
+      dialog.showErrorBox(
+        'Could not import notes',
+        'That file is not a valid Ghost Notes backup — it contains no readable notes.'
+      );
+      return { ok: false };
+    }
+
+    const { response } = await dialog.showMessageBox(managerWindow(), {
+      type: 'question',
+      buttons: ['Cancel', 'Merge', 'Replace'],
+      defaultId: 1,
+      cancelId: 0,
+      title: 'Import notes',
+      message: `Import ${records.length} note${records.length === 1 ? '' : 's'} from this backup?`,
+      detail:
+        'Merge keeps your current notes and adds the imported ones (existing notes win on duplicates). ' +
+        'Replace deletes every current note and restores only the backup.'
+    });
+    if (response === 0) return { canceled: true };
+    return { ok: true, ...actions.importNotes(records, response === 1 ? 'merge' : 'replace') };
   });
 
   return { openManagerWindow, notifyChanged };

@@ -187,6 +187,22 @@
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(91, 75, 255, 0.15);
   }
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 33px;
+    height: 33px;
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  .btn-icon:hover { background: var(--surface-2); color: var(--ink); border-color: var(--border-2); }
+  .btn-icon:active { transform: scale(0.95); }
 
   /* ─── List ────────────────────────────────────────────── */
   .list {
@@ -354,15 +370,26 @@
      options need one of their own to stay readable. */
   .move-select option { color: var(--ink); }
 
-  #version {
+  #footer {
     flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     padding: 8px 12px;
     font-size: 11px;
     color: var(--muted-2);
-    text-align: center;
     border-top: 1px solid var(--border);
     background: var(--surface);
   }
+  #status {
+    color: var(--accent-dk);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #version { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -400,9 +427,15 @@
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       New
     </button>
+    <button class="btn-icon" id="exportNotes" title="Export All Notes" aria-label="Export all notes to a backup file">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    </button>
+    <button class="btn-icon" id="importNotes" title="Import Notes" aria-label="Import notes from a backup file">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </button>
   </div>
   <div class="list" id="list"></div>
-  <div id="version"></div>
+  <div id="footer"><span id="status"></span><span id="version"></span></div>
   <script src="manager-renderer.js"></script>
 </body>
 </html>

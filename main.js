@@ -96,7 +96,8 @@ function createManager() {
       createWorkspace: (name) => createWorkspace(name),
       renameWorkspace: (id, name) => renameWorkspace(id, name),
       removeWorkspace: (id) => removeWorkspace(id),
-      moveNoteToWorkspace: (noteId, workspaceId) => moveNoteToWorkspace(noteId, workspaceId)
+      moveNoteToWorkspace: (noteId, workspaceId) => moveNoteToWorkspace(noteId, workspaceId),
+      importNotes: (records, mode) => importNotes(records, mode)
     }
   });
 }
@@ -272,6 +273,54 @@ function createNoteNearCursor() {
 
 // Scoped to the active workspace, because "hide all" should never reach into a
 // workspace the user isn't looking at and rewrite its notes' visibility.
+// Import (backup restore / migration). The store mutation is bulk; the
+// delicate part is reconciling note windows to the new record set.
+function importNotes(records, mode) {
+  let added = 0;
+  let skipped = 0;
+
+  if (mode === 'replace') {
+    // Close every note window first so no window outlives its record — and
+    // no window keeps stale content for an imported record that happens to
+    // reuse an existing id. They are reopened fresh from the new store below.
+    for (const win of noteWindows.values()) {
+      if (!win.isDestroyed()) win.destroy();
+    }
+    noteWindows.clear();
+    store.replaceAll(records);
+    added = records.length;
+  } else {
+    // Merge: existing notes win on duplicate ids, imported duplicates are
+    // counted so the manager can report how many were skipped.
+    const existingIds = new Set(store.all().map((n) => n.id));
+    const fresh = [];
+    for (const record of records) {
+      if (existingIds.has(record.id)) skipped++;
+      else fresh.push(record);
+    }
+    store.replaceAll([...store.all(), ...fresh]);
+    added = fresh.length;
+  }
+
+  // Records without a window are the imported ones. Their saved positions
+  // may belong to monitors that don't exist on this machine, so clamp them
+  // onto a visible display before showing them (same recovery the app uses
+  // at startup after display changes). On-screen notes keep their exact
+  // exported position and timestamps.
+  for (const record of store.all()) {
+    if (noteWindows.has(record.id)) continue;
+    const safe = clampToVisibleDisplay({ x: record.x, y: record.y, width: record.width, height: record.height });
+    if (safe.x !== record.x || safe.y !== record.y) {
+      store.update(record.id, { x: safe.x, y: safe.y, width: safe.width, height: safe.height, displayId: safe.displayId });
+    }
+    if (record.visible) openNoteWindow(store.get(record.id));
+  }
+
+  updateTrayMenu();
+  manager.notifyChanged();
+  return { added, skipped };
+}
+
 function toggleHideAll() {
   const records = store.notesInWorkspace(store.activeWorkspaceId());
   const anyVisible = records.some((n) => n.visible);

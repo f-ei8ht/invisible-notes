@@ -194,6 +194,35 @@ function migrate(data) {
   return normalizeWorkspaces({ ...data, notes });
 }
 
+// Convert a parsed backup file (any schema version this app has ever
+// written) into a clean list of current-schema records. Backups are
+// untrusted input — hand-edited, from another machine, or an older schema —
+// so every field the UI relies on is re-coerced to a sane type, unknown
+// fields are dropped by defaultRecord(), and duplicate ids are skipped.
+// Returns null when the payload is not a notes file at all.
+function normalizeImport(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.notes)) return null;
+  const seen = new Set();
+  const notes = [];
+  for (const entry of migrate(data).notes) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const record = defaultRecord(entry);
+    if (typeof record.id !== 'string' || !record.id) record.id = nextId();
+    if (seen.has(record.id)) continue;
+    seen.add(record.id);
+    if (typeof record.title !== 'string') record.title = '';
+    if (typeof record.text !== 'string') record.text = '';
+    if (typeof record.color !== 'string') record.color = 'yellow';
+    if (typeof record.fontSize !== 'number') record.fontSize = 15;
+    if (typeof record.x !== 'number') record.x = undefined;
+    if (typeof record.y !== 'number') record.y = undefined;
+    if (typeof record.createdAt !== 'number') record.createdAt = Date.now();
+    if (typeof record.updatedAt !== 'number') record.updatedAt = record.createdAt;
+    notes.push(record);
+  }
+  return notes;
+}
+
 class NoteStore {
   // onCorrupted(backupPath) and onWriteError(error) are optional hooks so the
   // caller (main.js) can surface a friendly, non-technical notice — this
@@ -448,11 +477,19 @@ class NoteStore {
     this.save();
     return record;
   }
+
+  // Bulk swap of the whole notes array — used by import (merge or replace),
+  // where callers have already normalized the records. One save instead of N.
+  replaceAll(records) {
+    this.data = { version: STORE_VERSION, notes: records };
+    this.save();
+  }
 }
 
 module.exports = {
   NoteStore,
   defaultRecord,
+  normalizeImport,
   STORE_VERSION,
   DEFAULT_WORKSPACE_ID,
   sanitizeWorkspaceName
